@@ -12,19 +12,19 @@ Python script that automates the process of redeeming gift codes in the game **W
     pip install requests opencv-python numpy pillow colorama
     ```
 3.  **Optional OCR Libraries**: Install **at least one** of the following based on the `--ocr-method` you intend to use:
-    *   **For `ddddocr` (Recommended Default, ~80% Success Rate):**
+    *   **For `ddddocr` (Recommended Default, ~80% Success Rate, Lightweight):**
         ```bash
         pip install ddddocr==1.5.6 --ignore-requires-python
         ```
         *(Note: --ignore-requires-python is required to support Python 3.13 and beyond)*
 
-    *   **For `easyocr`:**
+    *   **For `easyocr`(~40-50% Success Rate, Heavy Requirements):**
         ```bash
         pip install easyocr torch torchvision torchaudio
         ```
         *(Note: `torch` install might vary based on your system/CUDA version if using GPU. See GPU section below. This installs PyTorch for CPU.)*
 
-    *   **For `captchacracker`:**
+    *   **For `captchacracker` *(~40-50% Success Rate, Moderate Requirements):**
         ```bash
         pip install captchacracker
         ```
@@ -40,7 +40,7 @@ Python script that automates the process of redeeming gift codes in the game **W
 2.  **Install Dependencies**: Run the `pip install ...` commands listed in the **Prerequisites** section above for the core libraries and *at least one* optional OCR library. Use a [virtual environment](https://docs.python.org/3/library/venv.html) (`venv`) to manage dependencies cleanly.
     *   If you just want to use the default method (recommended), run: 
     ```
-    pip install requests opencv-python numpy pillow colorama ddddocr==1.5.6 --ignore-requires-python
+    pip install requests opencv-python-headless numpy pillow colorama ddddocr==1.5.6 --ignore-requires-python
     ```
 3.  **Prepare the CSV File(s)**:
     *   Create one or more `.csv` files (e.g., `player_ids.csv`).
@@ -109,7 +109,7 @@ python redeem_codes.py --code <gift_code> [--csv <path_or_pattern>] [--ocr-metho
     -   `ddddocr` (Recommended Default): Lightweight, fast, and generally effective for this type of captcha.
     -   `easyocr`: More robust OCR, potentially slower, offers GPU acceleration via PyTorch.
     -   `captchacracker`: Another model-based approach (requires TensorFlow).
-        > **Note:** The `captchacracker` method requires specific model files (`model/weights.h5`) and is currently unreliable compared to `ddddocr` or `easyocr` for this script. It is implemented for test purposes only. **`ddddocr` is the recommended method.**
+        > **Note:** The `captchacracker` method requires specific model files (`model/weights.h5`) and a better model will be trained in the future. **`ddddocr` is the recommended method.**
 -   **Flexible CSV Import**: Reads player IDs from `.csv` files. Supports **both** formats:
     -   One player ID per line.
     -   Multiple player IDs on a single line, separated by commas (whitespace is ignored).
@@ -250,6 +250,10 @@ If `--save-images` is set to 1, 2, or 3, a folder named `captcha_images` will be
 ---
 
 ## Changelog
+
+### v3.0.5 (Current)
+-   Uploaded a better Captchacracker model (trained on ~10k validated captchas)
+-   Reduced the character set to check for since the Gift API is case-insensitive
 
 ### v3.0.0 
 -   Refactored, streamlined OCR calling logic, updated summary statistics.

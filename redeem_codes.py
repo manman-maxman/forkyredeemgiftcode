@@ -76,7 +76,7 @@ MAX_CAPTCHA_FETCH_ATTEMPTS = 4
 
 # Captcha/OCR Common Configuration
 EXPECTED_CAPTCHA_LENGTH = 4
-VALID_CHARACTERS = set('123456789ABCDEFGHIJKLMNPQRSTUVWXYZabcdefghijklmnpqrstuvwxyz')
+VALID_CHARACTERS = set('123456789ABCDEFGHIJKLMNPQRSTUVWXYZ')
 
 # CaptchaCracker Configuration
 CC_WEIGHTS_PATH = "model/weights.h5"
@@ -523,12 +523,18 @@ def solve_captcha_with_ddddocr(image_bytes):
     try:
         predicted_text = ddddocr_ocr.classification(image_bytes)
 
-        if predicted_text and isinstance(predicted_text, str) and len(predicted_text) == EXPECTED_CAPTCHA_LENGTH and all(c in VALID_CHARACTERS for c in predicted_text):
-            log(f"DdddOcr Result: {predicted_text}")
-            counters["captcha_ocr_success_ddddocr"] += 1
-            return predicted_text
+        if predicted_text and isinstance(predicted_text, str):
+            predicted_text = predicted_text.upper()
+            
+            if len(predicted_text) == EXPECTED_CAPTCHA_LENGTH and all(c in VALID_CHARACTERS for c in predicted_text):
+                log(f"DdddOcr Result: {predicted_text}")
+                counters["captcha_ocr_success_ddddocr"] += 1
+                return predicted_text
+            else:
+                log(f"DdddOcr produced invalid result: '{predicted_text}' (Len: {len(predicted_text) if predicted_text else 0}, Expected: {EXPECTED_CAPTCHA_LENGTH}, Chars OK: {all(c in VALID_CHARACTERS for c in predicted_text) if predicted_text else 'N/A'})")
+                return None
         else:
-            log(f"DdddOcr produced invalid result: '{predicted_text}' (Len: {len(predicted_text) if predicted_text else 0}, Expected: {EXPECTED_CAPTCHA_LENGTH}, Chars OK: {all(c in VALID_CHARACTERS for c in predicted_text) if predicted_text else 'N/A'})")
+            log(f"DdddOcr produced invalid result: '{predicted_text}' (Type: {type(predicted_text)})")
             return None
     except Exception as e:
         log(f"DdddOcr classification error: {e}")
