@@ -2,6 +2,8 @@
 
 Python script that automates the process of redeeming gift codes in the game **Whiteout Survival**. It reads a list of Player IDs from one or more `.csv` files, automatically attempts to solve the CAPTCHA required by the API using a selected OCR method, sends requests to the game's giftcode redemption API, and redeems the specified gift code for each player.
 
+It was built with the goal of providing an alternative to [the Discord Bot](https://github.com/whiteout-project/bot) that I'm also helping develop. Setting up the bot and hosting it can take some effort to do, while this script can be run with one simple command. It can also be seen as providing a kind of backup when your Discord bot is down and redemption is failing. The bot is awesome though - check it out if you haven't already.
+
 ---
 
 ## Prerequisites
