@@ -1,38 +1,39 @@
-name: Redeem Codes
+name: Redeem Gift Codes
 
 on:
   workflow_dispatch:
     inputs:
       gift_code:
-        description: 'Gift code to redeem for all FIDs'
+        description: 'Enter the gift code to redeem'
         required: true
+        default: ''
 
 jobs:
   redeem:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Checkout repo
       - name: Checkout repository
         uses: actions/checkout@v3
 
+      # 2. Set up Python
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.12'
+          python-version: '3.13'
 
+      # 3. Upgrade pip
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
+      # 4. Install dependencies from requirements.txt
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+        run: pip install -r requirements.txt
 
+      # 5. Run redeem script
       - name: Redeem gift code for all FIDs
         run: |
           GIFT_CODE="${{ github.event.inputs.gift_code }}"
           echo "Redeeming gift code: $GIFT_CODE for all FIDs in data/fid.csv"
-
-          while IFS=, read -r fid; do
-            fid_trimmed=$(echo "$fid" | xargs)  # 去除空格
-            if [ ! -z "$fid_trimmed" ]; then
-              python redeem_codes.py --fid "$fid_trimmed" --code "$GIFT_CODE"
-            fi
-          done < data/fid.csv
+          python redeem_codes.py --code "$GIFT_CODE" --csv "data/fid.csv"
