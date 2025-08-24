@@ -1,0 +1,6 @@
+requests
+opencv-python-headless
+numpy
+pillow
+colorama
+ddddocr==1.5.6
