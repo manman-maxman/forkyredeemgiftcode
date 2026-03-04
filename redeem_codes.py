@@ -71,9 +71,10 @@ except ImportError:
 warnings.filterwarnings("ignore", message=".*pin_memory.*", category=UserWarning)
 
 # Global Configuration
-LOGIN_URL = "https://wos-giftcode-api.centurygame.com/api/player"
-CAPTCHA_URL = "https://wos-giftcode-api.centurygame.com/api/captcha"
-REDEEM_URL = "https://wos-giftcode-api.centurygame.com/api/gift_code"
+BASE_URL = "https://wos-giftcode-api.centurygame.com"
+LOGIN_URL = BASE_URL + "/api/player"
+CAPTCHA_URL = BASE_URL + "/api/captcha"
+REDEEM_URL = BASE_URL + "/api/gift_code"
 WOS_ENCRYPT_KEY = "tB87#kPtkxqOS2"
 
 DELAY = 1
@@ -860,12 +861,21 @@ def encode_data(data):
 
 def make_request(url, payload, headers=None):
     session = requests.Session()
-    # Basic headers that might help avoid suspicion
+    version = random.randint(130, 135)
     base_headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36',
+        'User-Agent': f'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{version}.0.0.0 Safari/537.36',
         'Accept': 'application/json, text/plain, */*',
+        'Accept-Encoding': 'gzip, deflate, br, zstd',
         'Accept-Language': 'en-US,en;q=0.9',
         'Content-Type': 'application/x-www-form-urlencoded',
+        'Origin': 'https://wos-giftcode.centurygame.com',
+        'Referer': 'https://wos-giftcode.centurygame.com/',
+        'sec-ch-ua': f'"Not:A-Brand";v="99", "Google Chrome";v="{version}", "Chromium";v="{version}"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Windows"',
+        'sec-fetch-dest': 'empty',
+        'sec-fetch-mode': 'cors',
+        'sec-fetch-site': 'same-site',
     }
     if headers:
         base_headers.update(headers)
