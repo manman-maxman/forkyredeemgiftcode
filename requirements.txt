@@ -3,4 +3,5 @@ opencv-python-headless
 numpy
 pillow
 colorama
+onnxruntime
 ddddocr==1.5.6
