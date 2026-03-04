@@ -62,9 +62,10 @@ except ImportError:
 warnings.filterwarnings("ignore", message=".*pin_memory.*", category=UserWarning)
 
 # Global Configuration
-LOGIN_URL = "https://wos-giftcode-api.centurygame.com/api/player"
-CAPTCHA_URL = "https://wos-giftcode-api.centurygame.com/api/captcha"
-REDEEM_URL = "https://wos-giftcode-api.centurygame.com/api/gift_code"
+BASE_URL = "https://wos-giftcode-api.centurygame.com/"
+LOGIN_URL = BASE_URL + "api/player"
+CAPTCHA_URL = BASE_URL + "api/captcha"
+REDEEM_URL = BASE_URL + "api/gift_code"
 WOS_ENCRYPT_KEY = "tB87#kPtkxqOS2"
 
 DELAY = 1
@@ -733,6 +734,7 @@ def make_request(url, payload, headers=None):
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36',
         'Accept': 'application/json, text/plain, */*',
         'Accept-Language': 'en-US,en;q=0.9',
+        'Referer': BASE_URL,
         'Content-Type': 'application/x-www-form-urlencoded',
     }
     if headers:
