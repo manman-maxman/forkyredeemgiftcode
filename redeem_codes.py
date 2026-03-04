@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-# Whiteout Gift Code Redeemer Script Version 3.0.0
-# Refactored to provide 3 different options for OCR
+# Whiteout Gift Code Redeemer Script Version 4.0.0
+# Custom ONNX captcha model as default, with ddddocr/easyocr/captchacracker fallbacks
 
 import os
+import io
 import warnings
 import requests
 import time
@@ -59,12 +60,21 @@ except ImportError:
     ddddocr = None
     DDDDOCR_AVAILABLE = False
 
+# Potentially Add ONNX Runtime
+try:
+    import onnxruntime as ort
+    ONNX_AVAILABLE = True
+except ImportError:
+    ort = None
+    ONNX_AVAILABLE = False
+
 warnings.filterwarnings("ignore", message=".*pin_memory.*", category=UserWarning)
 
 # Global Configuration
-LOGIN_URL = "https://wos-giftcode-api.centurygame.com/api/player"
-CAPTCHA_URL = "https://wos-giftcode-api.centurygame.com/api/captcha"
-REDEEM_URL = "https://wos-giftcode-api.centurygame.com/api/gift_code"
+BASE_URL = "https://wos-giftcode-api.centurygame.com"
+LOGIN_URL = BASE_URL + "/api/player"
+CAPTCHA_URL = BASE_URL + "/api/captcha"
+REDEEM_URL = BASE_URL + "/api/gift_code"
 WOS_ENCRYPT_KEY = "tB87#kPtkxqOS2"
 
 DELAY = 1
@@ -85,6 +95,10 @@ CC_IMG_HEIGHT = 40
 CC_MAX_LENGTH = EXPECTED_CAPTCHA_LENGTH
 CC_CHARACTERS = VALID_CHARACTERS
 
+# ONNX Model Configuration
+ONNX_MODEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "model", "captcha_model.onnx")
+ONNX_METADATA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "model", "captcha_model_metadata.json")
+
 # EasyOCR Configuration
 MIN_CONFIDENCE_EASYOCR = 0.4
 
@@ -95,6 +109,9 @@ def parse_args():
     # Dynamically build OCR choices based on available libraries
     ocr_choices = []
     available_methods = []
+    if ONNX_AVAILABLE:
+        ocr_choices.append('onnx')
+        available_methods.append('ONNX')
     if DDDDOCR_AVAILABLE:
         ocr_choices.append('ddddocr')
         available_methods.append('DdddOcr')
@@ -105,19 +122,21 @@ def parse_args():
         ocr_choices.append('captchacracker')
         available_methods.append('CaptchaCracker')
 
-    default_ocr = 'ddddocr'
+    default_ocr = 'onnx'
     if ocr_choices:
-        # Prioritize: ddddocr -> CaptchaCracker -> EasyOCR
-        if 'ddddocr' in ocr_choices: default_ocr = 'ddddocr'
+        # Prioritize: ONNX -> ddddocr -> CaptchaCracker -> EasyOCR
+        if 'onnx' in ocr_choices: default_ocr = 'onnx'
+        elif 'ddddocr' in ocr_choices: default_ocr = 'ddddocr'
         elif 'captchacracker' in ocr_choices: default_ocr = 'captchacracker'
         elif 'easyocr' in ocr_choices: default_ocr = 'easyocr'
 
+    if not ONNX_AVAILABLE: print("Warning: ONNX Runtime not found.")
     if not EASYOCR_AVAILABLE: print("Warning: EasyOCR library not found.")
     if not CAPTCHA_CRACKER_AVAILABLE: print("Warning: CaptchaCracker library not found.")
     if not DDDDOCR_AVAILABLE: print("Warning: ddddocr library not found.")
 
     if not ocr_choices:
-        print("CRITICAL ERROR: No OCR libraries (EasyOCR, CaptchaCracker, or ddddocr) found. Please install at least one.")
+        print("CRITICAL ERROR: No OCR libraries (ONNX, EasyOCR, CaptchaCracker, or ddddocr) found. Please install at least one.")
         sys.exit(1)
 
     parser.add_argument('--ocr-method', type=str, default=default_ocr, choices=ocr_choices,
@@ -133,6 +152,9 @@ def parse_args():
 args = parse_args()
 
 # --- Basic Sanity Checks ---
+if args.ocr_method == 'onnx' and not ONNX_AVAILABLE:
+    print("Error: ONNX selected but onnxruntime not available.")
+    sys.exit(1)
 if args.ocr_method == 'easyocr' and not EASYOCR_AVAILABLE:
     print("Error: EasyOCR selected but not available.")
     sys.exit(1)
@@ -158,6 +180,8 @@ except Exception as e:
 easyocr_reader = None
 cc_apply_model = None
 ddddocr_ocr = None
+onnx_session = None
+onnx_metadata = None
 
 # Initialize EasyOCR if needed
 if args.ocr_method == 'easyocr' and EASYOCR_AVAILABLE:
@@ -257,6 +281,58 @@ if args.ocr_method == 'ddddocr' and DDDDOCR_AVAILABLE:
             print("Exiting as ddddocr initialization failed.")
             sys.exit(1)
 
+# Initialize ONNX model if needed
+if args.ocr_method == 'onnx' and ONNX_AVAILABLE:
+    print("ONNX: Initializing captcha model...")
+    if not os.path.exists(ONNX_MODEL_PATH):
+        print(f"CRITICAL ERROR: ONNX model file not found at '{ONNX_MODEL_PATH}'.")
+        ONNX_AVAILABLE = False
+        if args.ocr_method == 'onnx':
+            print("Exiting as required ONNX model is missing.")
+            sys.exit(1)
+    elif not os.path.exists(ONNX_METADATA_PATH):
+        print(f"CRITICAL ERROR: ONNX metadata file not found at '{ONNX_METADATA_PATH}'.")
+        ONNX_AVAILABLE = False
+        if args.ocr_method == 'onnx':
+            print("Exiting as required ONNX metadata is missing.")
+            sys.exit(1)
+    else:
+        try:
+            onnx_session = ort.InferenceSession(ONNX_MODEL_PATH)
+            with open(ONNX_METADATA_PATH, 'r') as f:
+                onnx_metadata = json.load(f)
+
+            # Verify model with dummy inference
+            height, width = onnx_metadata['input_shape'][1:3]
+            dummy_img = np.random.rand(1, 1, height, width).astype(np.float32)
+            input_name = onnx_session.get_inputs()[0].name
+            outputs = onnx_session.run(None, {input_name: dummy_img})
+
+            if len(outputs) == 4:
+                accuracy = onnx_metadata.get('best_accuracy', 'N/A')
+                print(f"ONNX: Model loaded successfully (trained accuracy: {accuracy:.2f}%).")
+                try:
+                    providers = onnx_session.get_providers()
+                    print(f"ONNX Runtime: Execution providers: {providers}")
+                except Exception:
+                    pass
+            else:
+                print(f"CRITICAL ERROR: ONNX model test failed. Expected 4 outputs, got {len(outputs)}.")
+                onnx_session = None
+                onnx_metadata = None
+                ONNX_AVAILABLE = False
+                if args.ocr_method == 'onnx':
+                    sys.exit(1)
+
+        except Exception as e:
+            print(f"CRITICAL ERROR: Failed to initialize ONNX model: {e}")
+            onnx_session = None
+            onnx_metadata = None
+            ONNX_AVAILABLE = False
+            if args.ocr_method == 'onnx':
+                print("Exiting as ONNX initialization failed.")
+                sys.exit(1)
+
 RESULT_MESSAGES = {
     "SUCCESS": "Successfully redeemed",
     "RECEIVED": "Already redeemed",
@@ -281,6 +357,7 @@ counters = {
     "captcha_ocr_success_cc": 0,        # Successful CaptchaCracker OCR
     "captcha_ocr_success_easyocr": 0,   # Successful EasyOCR
     "captcha_ocr_success_ddddocr": 0,   # Successful ddddocr OCR
+    "captcha_ocr_success_onnx": 0,      # Successful ONNX OCR
     "captcha_redeem_success": 0,        # Captcha passed server validation
     "captcha_redeem_failure": 0,        # Captcha failed server validation
     "captcha_rate_limited": 0,          # Hit rate limit during fetch or redeem
@@ -513,6 +590,54 @@ def solve_captcha_with_easyocr(image_np):
 
     return None, "None"
 
+def solve_captcha_with_onnx(image_bytes):
+    """Attempts to solve captcha using the custom ONNX model."""
+    if not onnx_session or not onnx_metadata or not ONNX_AVAILABLE:
+        log("ONNX model not available or not initialized.")
+        return None
+
+    counters["captcha_ocr_attempts"] += 1
+    try:
+        # Preprocess: grayscale, resize, normalize
+        image = Image.open(io.BytesIO(image_bytes))
+        if image.mode != 'L':
+            image = image.convert('L')
+
+        height, width = onnx_metadata['input_shape'][1:3]
+        image = image.resize((width, height), Image.LANCZOS)
+
+        image_array = np.array(image, dtype=np.float32)
+        mean = onnx_metadata['normalization']['mean'][0]
+        std = onnx_metadata['normalization']['std'][0]
+        image_array = (image_array / 255.0 - mean) / std
+        image_array = np.expand_dims(image_array, axis=(0, 1))  # [1, 1, H, W]
+
+        # Run inference
+        input_name = onnx_session.get_inputs()[0].name
+        outputs = onnx_session.run(None, {input_name: image_array})
+
+        # Decode predictions
+        idx_to_char = onnx_metadata['idx_to_char']
+        valid_chars = set(onnx_metadata['chars'])
+        predicted_text = ""
+
+        for pos in range(4):
+            char_probs = outputs[pos][0]
+            predicted_idx = np.argmax(char_probs)
+            predicted_text += idx_to_char[str(predicted_idx)]
+
+        if (predicted_text and len(predicted_text) == EXPECTED_CAPTCHA_LENGTH
+                and all(c in valid_chars for c in predicted_text)):
+            log(f"ONNX Result: {predicted_text}")
+            counters["captcha_ocr_success_onnx"] += 1
+            return predicted_text
+        else:
+            log(f"ONNX produced invalid result: '{predicted_text}' (Len: {len(predicted_text) if predicted_text else 0}, Expected: {EXPECTED_CAPTCHA_LENGTH})")
+            return None
+    except Exception as e:
+        log(f"ONNX inference error: {e}")
+        return None
+
 def solve_captcha_with_ddddocr(image_bytes):
     """Attempts to solve captcha using the ddddocr library."""
     if not ddddocr_ocr or not DDDDOCR_AVAILABLE:
@@ -613,8 +738,16 @@ def fetch_and_solve_captcha(fid, nickname, retry_queue=None):
                     solved_code = None
                     ocr_method_successful = "None"
 
+                    # ONNX Model
+                    if args.ocr_method == 'onnx':
+                        log(f"{nickname} ({fid}) - [Attempt {attempts+1}/{MAX_CAPTCHA_FETCH_ATTEMPTS}] Attempting OCR with ONNX model...", level='process')
+                        onnx_code = solve_captcha_with_onnx(img_bytes)
+                        if onnx_code:
+                            solved_code = onnx_code
+                            ocr_method_successful = "ONNX"
+
                     # DdddOcr
-                    if not solved_code and args.ocr_method == 'ddddocr':
+                    elif args.ocr_method == 'ddddocr':
                         log(f"{nickname} ({fid}) - [Attempt {attempts+1}/{MAX_CAPTCHA_FETCH_ATTEMPTS}] Attempting OCR with ddddocr...", level='process')
                         ddddocr_code = solve_captcha_with_ddddocr(img_bytes)
                         if ddddocr_code:
@@ -728,12 +861,21 @@ def encode_data(data):
 
 def make_request(url, payload, headers=None):
     session = requests.Session()
-    # Basic headers that might help avoid suspicion
+    version = random.randint(130, 135)
     base_headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36',
+        'User-Agent': f'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{version}.0.0.0 Safari/537.36',
         'Accept': 'application/json, text/plain, */*',
+        'Accept-Encoding': 'gzip, deflate, br, zstd',
         'Accept-Language': 'en-US,en;q=0.9',
         'Content-Type': 'application/x-www-form-urlencoded',
+        'Origin': 'https://wos-giftcode.centurygame.com',
+        'Referer': 'https://wos-giftcode.centurygame.com/',
+        'sec-ch-ua': f'"Not:A-Brand";v="99", "Google Chrome";v="{version}", "Chromium";v="{version}"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Windows"',
+        'sec-fetch-dest': 'empty',
+        'sec-fetch-mode': 'cors',
+        'sec-fetch-site': 'same-site',
     }
     if headers:
         base_headers.update(headers)
@@ -1052,6 +1194,8 @@ def print_summary():
     log(f"Total Captcha Fetches Attempted: {counters['captcha_fetch_attempts']}")
     log(f"Total OCR Recognition Calls: {counters['captcha_ocr_attempts']}")
     log(f"Successful OCR (Valid Format): {counters['captcha_ocr_success']}")
+    if args.ocr_method == 'onnx':
+        log(f"  └─ ONNX Successes: {counters['captcha_ocr_success_onnx']}")
     if args.ocr_method == 'captchacracker':
         log(f"  └─ CaptchaCracker Successes: {counters['captcha_ocr_success_cc']}")
     if args.ocr_method == 'easyocr':
@@ -1082,7 +1226,8 @@ if __name__ == "__main__":
     log(f"\n=== Starting redemption script at {start_time_str} ===")
     log(f"Gift Code: {args.code}")
     log(f"Selected OCR Method: {args.ocr_method}")
-    if args.ocr_method == 'easyocr' and args.use_gpu is not None: log(f"  (EasyOCR GPU Preference: Device {args.use_gpu})")
+    if args.ocr_method == 'onnx' and args.use_gpu is not None: log("  (ONNX GPU Hint: ONNX Runtime usually auto-detects)")
+    elif args.ocr_method == 'easyocr' and args.use_gpu is not None: log(f"  (EasyOCR GPU Preference: Device {args.use_gpu})")
     elif args.ocr_method == 'captchacracker' and args.use_gpu is not None: log("  (CaptchaCracker GPU Hint: TensorFlow/ONNX usually auto-detects)")
     elif args.ocr_method == 'ddddocr' and args.use_gpu is not None: log("  (DdddOcr GPU Hint: ONNX Runtime usually auto-detects)")
     log(f"Save Images Mode: {args.save_images} (0:None, 1:Failed, 2:Success, 3:All)")
