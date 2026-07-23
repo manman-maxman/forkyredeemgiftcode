@@ -8,8 +8,6 @@ It was built with the goal of providing an alternative to [the Discord Bot](http
 
 ## Prerequisites
 
-> **Python 3.14 Notice:** `onnxruntime` does not yet support Python 3.14 on the stable release channel. If you are running Python 3.14, you can install the beta build (`pip install onnxruntime --pre`) or use an alternative OCR method such as `ddddocr`. Python 3.9–3.13 are fully supported.
-
 1.  **Python 3.9+**: Download and install Python 3.9 or later from [python.org](https://www.python.org/). Ensure Python is added to your system's PATH during installation.
 2.  **Core Libraries**: Install the base libraries required by the script:
     ```bash
